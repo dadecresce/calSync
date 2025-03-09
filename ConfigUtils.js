@@ -2,9 +2,10 @@
 
 function getConfig() {
   return {
-    calendarIds: [
-      'service3civette@gmail.com',
-      'udlnhgidrei32nla3ufs8cr6v0@group.calendar.google.com'
+     calendarIds: [
+      'service3civette@gmail.com',                            //service
+      'udlnhgidrei32nla3ufs8cr6v0@group.calendar.google.com', //allestimenti
+      'fomiag6eteogr75lnnhs99mldo@group.calendar.google.com'  //magazzino
     ],
     formUrl: 'https://docs.google.com/forms/d/14ErbViiMIM4DsYpg2Z0nI5JotqlIexxMyGwcCkYHF0g/viewform',
     sheetNames: {

@@ -54,6 +54,9 @@ function updateServices(ss, allEvents, techMapping) {
             `&entry.204817070=${encodeURIComponent(fullDescription)}` +
             `&entry.1169178161=${encodeURIComponent(sentinelValue)}`;
           
+          // Crea uno short link usando il servizio URL Shortener
+          let shortPrefilledUrl = createShortUrl(prefilledUrl);
+          
           // Link WhatsApp (Titolo prima di Luogo, allineato al form)
           let whatsappUrl = "";
           if (techPhone) {
@@ -66,9 +69,12 @@ function updateServices(ss, allEvents, techMapping) {
               `Fine: ${endTimeFormatted}\n` +
               `Mezzo: ${vehicle}\n` +
               `Descrizione: ${fullDescription}\n` +
-              `Link: ${prefilledUrl}`
+              `Link: ${shortPrefilledUrl}`
             );
             whatsappUrl = `https://wa.me/${techPhone}?text=${message}`;
+            
+            // Crea uno short link per WhatsApp
+            whatsappUrl = createShortUrl(whatsappUrl);
           }
           
           const serviceRowData = [
@@ -77,7 +83,7 @@ function updateServices(ss, allEvents, techMapping) {
             standardizedTech,
             noteText,
             idLink,
-            prefilledUrl,
+            shortPrefilledUrl || prefilledUrl, // Usa lo short link se disponibile
             whatsappUrl
           ];
           
@@ -96,4 +102,24 @@ function updateServices(ss, allEvents, techMapping) {
     if (serviceDataNew.length > 0) {
       servicesSheet.getRange(servicesSheet.getLastRow() + 1, 1, serviceDataNew.length, 7).setValues(serviceDataNew);
     }
+}
+
+// Funzione per creare URL brevi
+function createShortUrl(longUrl) {
+  try {
+    // Puoi usare diversi servizi di URL shortening
+    // Esempio con TinyURL (è un esempio e potrebbe richiedere una API key)
+    const encodedUrl = encodeURIComponent(longUrl);
+    const response = UrlFetchApp.fetch(`https://tinyurl.com/api-create.php?url=${encodedUrl}`);
+    
+    if (response.getResponseCode() === 200) {
+      return response.getContentText();
+    } else {
+      Logger.log('Errore nella creazione dello short URL: ' + response.getContentText());
+      return longUrl; // Ritorna l'URL originale in caso di errore
+    }
+  } catch (error) {
+    Logger.log('Errore nel servizio di shortening: ' + error.toString());
+    return longUrl; // Ritorna l'URL originale in caso di errore
   }
+}

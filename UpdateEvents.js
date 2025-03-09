@@ -1,156 +1,103 @@
-// UpdateTechCalendars.js
+// UpdateEvents.js
 
-function updateTechCalendars(ss, allEvents, techMapping) {
+function updateEvents(ss, calendarEvents, techMapping) {
   const config = getConfig();
+  const eventsSheet = ss.getSheetByName(config.sheetNames.eventi);
   
-  // Filtra solo gli eventi con tecnici assegnati
-  allEvents.forEach(event => {
-    const eventId = event[0];
-    const eventName = event[3]; // Nome evento
-    const luogo = event[4];     // Luogo/indirizzo
-    const startTimeISO = event[16];
-    const endTimeISO = event[17];
-    const description = event[18]; // Descrizione originale dell'evento
-    const extraInfos = event.slice(19, 24);
-    
-    // Ottieni il nome del calendario di origine
-    const calendarName = event[24] || "Calendario principale"; // La colonna 25 (indice 24) contiene il nome del calendario
-    
-    // Itera sui tecnici assegnati all'evento
-    for (let i = 0; i < 5; i++) {
-      const techName = event[5 + i];
-      if (techName && techName.trim() !== "" && techMapping.hasOwnProperty(techName.toLowerCase())) {
-        const tech = techMapping[techName.toLowerCase()];
-        
-        // Verifica se il tecnico ha un calendario configurato
-        if (tech.calendarId && tech.calendarId.trim() !== "") {
-          try {
-            const techCalendar = CalendarApp.getCalendarById(tech.calendarId);
-            if (techCalendar) {
-              // Crea titolo evento per il calendario del tecnico
-              const techEventTitle = `${eventName} - ${luogo}`;
-              
-              // Recupera il link al form precompilato
-              const idLink = `${eventId}${techName}`;
-              let formLink = "";
-              
-              // Cerca il link al form nella scheda servizi
-              const servicesSheet = ss.getSheetByName(config.sheetNames.servizi);
-              if (servicesSheet) {
-                const servicesData = servicesSheet.getDataRange().getValues();
-                for (let j = 1; j < servicesData.length; j++) {
-                  if (servicesData[j][4] && servicesData[j][4].toString().trim().toLowerCase() === idLink.toLowerCase()) {
-                    formLink = servicesData[j][5]; // Colonna F contiene il link al form
-                    break;
-                  }
-                }
-              }
-              
-              // Crea descrizione per il calendario del tecnico
-              let extraInfo = extraInfos[i] || "";
-              extraInfo = (typeof extraInfo === "string") ? extraInfo.trim() : "";
-              
-              // Assicuriamoci che la descrizione originale dell'evento sia sempre inclusa
-              let fullDescription = description || "";
-              
-              // Aggiungi info sul calendario di origine
-              fullDescription = `Calendario di origine: ${calendarName}\n\nDescrizione evento: ${fullDescription}`;
-              
-              // Se c'è un'informazione extra per questo tecnico, aggiungila come una nota separata
-              if (extraInfo) {
-                fullDescription = `${fullDescription}\n\nNote per ${tech.name}: ${extraInfo}`;
-              }
-              
-              // Aggiungi il link al form precompilato
-              if (formLink) {
-                fullDescription = `${fullDescription}\n\nCompila il form di servizio: ${formLink}`;
-              }
-              
-              // Crea o aggiorna l'evento nel calendario del tecnico
-              const startTime = new Date(startTimeISO);
-              const endTime = new Date(endTimeISO);
-              
-              // Cerca se esiste già un evento con lo stesso ID nel calendario del tecnico
-              // Utilizziamo una proprietà estesa per memorizzare l'ID dell'evento originale
-              const existingEvents = techCalendar.getEvents(
-                new Date(startTime.getTime() - 3600000), // 1 ora prima
-                new Date(endTime.getTime() + 3600000)    // 1 ora dopo
-              );
-              
-              let techEvent = null;
-              let eventFound = false;
-              
-              // Prima verifica se c'è un evento con l'ID originale nelle proprietà estese
-              for (let j = 0; j < existingEvents.length; j++) {
-                const currentEvent = existingEvents[j];
-                try {
-                  const properties = currentEvent.getAllExtendedProperties();
-                  if (properties && properties.shared && properties.shared.originalEventId === eventId) {
-                    techEvent = currentEvent;
-                    eventFound = true;
-                    break;
-                  }
-                } catch (propError) {
-                  // Ignora errori nelle proprietà estese
-                }
-              }
-              
-              // Se non è stato trovato un evento con l'ID originale, cerca eventi con titolo simile
-              if (!eventFound) {
-                for (let j = 0; j < existingEvents.length; j++) {
-                  if (existingEvents[j].getTitle().includes(eventName) || 
-                      existingEvents[j].getTitle().includes(luogo)) {
-                    techEvent = existingEvents[j];
-                    eventFound = true;
-                    break;
-                  }
-                }
-              }
-              
-              if (eventFound && techEvent) {
-                // Aggiorna l'evento esistente
-                techEvent.setTitle(techEventTitle);
-                techEvent.setDescription(fullDescription);
-                if (luogo && luogo.trim() !== "") {
-                  techEvent.setLocation(luogo);
-                }
-                techEvent.setTime(startTime, endTime);
-                
-                // Assicuriamoci che l'ID originale sia salvato nelle proprietà estese
-                try {
-                  techEvent.setExtendedProperty('originalEventId', eventId);
-                } catch (propError) {
-                  Logger.log(`Impossibile impostare la proprietà estesa: ${propError.toString()}`);
-                }
-                
-                Logger.log(`Evento aggiornato nel calendario di ${tech.name}: ${techEventTitle}`);
-              } else {
-                // Crea un nuovo evento
-                techEvent = techCalendar.createEvent(
-                  techEventTitle,
-                  startTime,
-                  endTime,
-                  {
-                    description: fullDescription,
-                    location: luogo
-                  }
-                );
-                
-                // Salva l'ID originale nelle proprietà estese
-                try {
-                  techEvent.setExtendedProperty('originalEventId', eventId);
-                } catch (propError) {
-                  Logger.log(`Impossibile impostare la proprietà estesa: ${propError.toString()}`);
-                }
-                
-                Logger.log(`Nuovo evento creato nel calendario di ${tech.name}: ${techEventTitle}`);
-              }
-            }
-          } catch (error) {
-            Logger.log(`Errore nell'aggiornamento del calendario per ${tech.name}: ${error.toString()}`);
-          }
-        }
+  // Preparation: create arrays to store existing and new events
+  let existingEvents = [];
+  if (eventsSheet.getLastRow() >= 2) {
+    existingEvents = eventsSheet.getRange(2, 1, eventsSheet.getLastRow() - 1, 25).getValues();
+  }
+  const existingIds = existingEvents.map(row => row[0]);
+  
+  const newEvents = [];
+  const allEvents = [];
+  
+  // Process each calendar event
+  calendarEvents.forEach(calEvent => {
+    try {
+      const eventId = calEvent.getId();
+      const title = calEvent.getTitle();
+      const description = calEvent.getDescription();
+      const location = calEvent.getLocation() || "";
+      const startTime = calEvent.getStartTime();
+      const endTime = calEvent.getEndTime();
+      const formattedDate = Utilities.formatDate(startTime, "GMT+1", "dd-MM-yyyy");
+      
+      // Convert calendar event title and location - we'll assume title contains event name and location
+      // This logic might need adjustment based on your actual calendar event format
+      let eventName = title;
+      let eventLocation = location;
+      
+      // Determine the calendar name
+      let calendarName = "";
+      try {
+        calendarName = calEvent.getOriginalCalendarId() ? 
+                      CalendarApp.getCalendarById(calEvent.getOriginalCalendarId()).getName() : 
+                      "Calendario principale";
+      } catch (e) {
+        calendarName = "Calendario principale";
       }
+      
+      // Default structure for an event row (25 columns)
+      const eventRow = [
+        eventId,                                // ID Evento
+        formattedDate,                          // Data in formato "dd-MM-yyyy"
+        new Date(startTime),                    // Data come oggetto Date
+        eventName,                              // Nome evento
+        eventLocation,                          // Luogo
+        "", "", "", "", "",                     // Tecnici 1-5 (colonne F-J)
+        "", "", "", "", "",                     // ID Tecnici 1-5 (colonne K-O)
+        "",                                     // Mezzo/Veicolo (colonna P)
+        startTime.toISOString(),                // Data e ora inizio (ISO)
+        endTime.toISOString(),                  // Data e ora fine (ISO)
+        description || "",                      // Descrizione evento
+        "", "", "", "", "",                     // Info extra per tecnici 1-5 (colonne T-X)
+        calendarName                            // Nome calendario (colonna Y)
+      ];
+      
+      // Check if this event already exists in our spreadsheet
+      const indexEvent = existingIds.indexOf(eventId);
+      
+      if (indexEvent > -1) {
+        // Event exists - update it and preserve tecnici and other data
+        const existingEvent = existingEvents[indexEvent];
+        
+        // Copy existing technicians and IDs
+        for (let i = 0; i < 5; i++) {
+          eventRow[5 + i] = existingEvent[5 + i]; // Tech names
+          eventRow[10 + i] = existingEvent[10 + i]; // Tech IDs
+        }
+        
+        // Copy vehicle information
+        eventRow[15] = existingEvent[15]; // Mezzo
+        
+        // Copy extra info for technicians
+        for (let i = 0; i < 5; i++) {
+          eventRow[19 + i] = existingEvent[19 + i];
+        }
+        
+        // Update the event in the spreadsheet
+        const rowIndex = indexEvent + 2;
+        eventsSheet.getRange(rowIndex, 1, 1, 25).setValues([eventRow]);
+        eventsSheet.getRange(rowIndex, 1).setBackground('yellow');
+      } else {
+        // New event - add it to the array of new events
+        newEvents.push(eventRow);
+      }
+      
+      // Add this event to the allEvents array (to be returned)
+      allEvents.push(eventRow);
+    } catch (error) {
+      Logger.log(`Errore nell'elaborazione dell'evento: ${error.toString()}`);
     }
   });
+  
+  // If there are new events, append them to the spreadsheet
+  if (newEvents.length > 0) {
+    eventsSheet.getRange(eventsSheet.getLastRow() + 1, 1, newEvents.length, 25).setValues(newEvents);
+  }
+  
+  return allEvents;
 }
