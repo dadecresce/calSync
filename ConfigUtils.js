@@ -2,7 +2,10 @@
 
 function getConfig() {
   return {
-    calendarId: 'service3civette@gmail.com',
+    calendarIds: [
+      'service3civette@gmail.com',
+      'udlnhgidrei32nla3ufs8cr6v0@group.calendar.google.com'
+    ],
     formUrl: 'https://docs.google.com/forms/d/14ErbViiMIM4DsYpg2Z0nI5JotqlIexxMyGwcCkYHF0g/viewform',
     sheetNames: {
       eventi: 'eventi',
@@ -30,8 +33,14 @@ function buildTechMapping(ss) {
       let techID = techData[i][0].toString().trim();      // Colonna A: IDTecnico
       let techName = techData[i][1].toString().trim();    // Colonna B: Nome
       let techPhone = techData[i][2] ? techData[i][2].toString().trim() : ""; // Colonna C: Numero di Telefono
+      let techCalendarId = techData[i][3] ? techData[i][3].toString().trim() : ""; // Colonna D: ID Calendario
       if (techName) {
-        techMapping[techName.toLowerCase()] = { id: techID, name: techName, phone: techPhone };
+        techMapping[techName.toLowerCase()] = { 
+          id: techID, 
+          name: techName, 
+          phone: techPhone,
+          calendarId: techCalendarId
+        };
       }
     }
   }
