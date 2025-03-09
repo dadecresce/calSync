@@ -10,7 +10,7 @@ function updateTechCalendars(ss, allEvents, techMapping) {
     const luogo = event[4];     // Luogo/indirizzo
     const startTimeISO = event[16];
     const endTimeISO = event[17];
-    const description = event[18];
+    const description = event[18]; // Descrizione originale dell'evento
     const extraInfos = event.slice(19, 24);
     
     // Itera sui tecnici assegnati all'evento
@@ -47,9 +47,14 @@ function updateTechCalendars(ss, allEvents, techMapping) {
               let extraInfo = extraInfos[i] || "";
               extraInfo = (typeof extraInfo === "string") ? extraInfo.trim() : "";
               
+              // Assicuriamoci che la descrizione originale dell'evento sia sempre inclusa
               let fullDescription = description || "";
+              
+              // Se c'è un'informazione extra per questo tecnico, aggiungila come una nota separata
               if (extraInfo) {
-                fullDescription = `${fullDescription}\n\nNote: ${extraInfo}`;
+                fullDescription = `Descrizione evento: ${fullDescription}\n\nNote per ${tech.name}: ${extraInfo}`;
+              } else {
+                fullDescription = `Descrizione evento: ${fullDescription}`;
               }
               
               // Aggiungi il link al form precompilato
