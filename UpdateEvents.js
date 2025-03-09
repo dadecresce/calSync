@@ -1,108 +1,156 @@
-// UpdateEvents.gs
+// UpdateTechCalendars.js
 
-function updateEvents(ss, events, techMapping) {
+function updateTechCalendars(ss, allEvents, techMapping) {
   const config = getConfig();
-  const eventsSheet = ss.getSheetByName(config.sheetNames.eventi);
   
-  let existingEvents = [];
-  if (eventsSheet.getLastRow() >= 2) {
-    existingEvents = eventsSheet.getRange(2, 1, eventsSheet.getLastRow() - 1, 24).getValues();
-  }
-  const existingEventIds = existingEvents.map(row => row[0]);
-  
-  const eventDataNew = [];
-  events.forEach(event => {
-    const eventId = event.getId();
-    const eventDate = Utilities.formatDate(event.getStartTime(), "GMT+1", "dd-MM-yyyy");
-    let title = event.getTitle();
+  // Filtra solo gli eventi con tecnici assegnati
+  allEvents.forEach(event => {
+    const eventId = event[0];
+    const eventName = event[3]; // Nome evento
+    const luogo = event[4];     // Luogo/indirizzo
+    const startTimeISO = event[16];
+    const endTimeISO = event[17];
+    const description = event[18]; // Descrizione originale dell'evento
+    const extraInfos = event.slice(19, 24);
     
-    const regex = /^(.*?)\s*(?:-|@)\s*(.*?)\s*\((.*?)\)\s*(.*)?$/;
-    const match = title.match(regex);
+    // Ottieni il nome del calendario di origine
+    const calendarName = event[24] || "Calendario principale"; // La colonna 25 (indice 24) contiene il nome del calendario
     
-    let idCivette = "", luogo = "", name = "";
-    let techNames = [];
-    let techExtras = [];
-    let noteFromParentheses = "";
-    let vehicle = "";
-    
-    if (match) {
-      const group1 = match[1].trim();
-      const group1Regex = /^(\d+)\s+(.*)$/;
-      const group1Match = group1.match(group1Regex);
-      if (group1Match) {
-        idCivette = group1Match[1];
-        name = group1Match[2];
-      } else {
-        name = group1;
-      }
-      luogo = match[2].trim();
-      let rawGroup = match[3].trim();
-      let tokens = rawGroup.split(/[+\/]/).map(token => token.trim()).filter(token => token !== "");
-      let tokenObjects = tokens.map(token => {
-        let m = token.match(/^([A-Za-zÀ-ÖØ-öø-ÿ]+)\s*(.*)$/);
-        if (m) {
-          return { name: m[1], extra: (m[2] && typeof m[2] === 'string') ? m[2].trim() : "" };
+    // Itera sui tecnici assegnati all'evento
+    for (let i = 0; i < 5; i++) {
+      const techName = event[5 + i];
+      if (techName && techName.trim() !== "" && techMapping.hasOwnProperty(techName.toLowerCase())) {
+        const tech = techMapping[techName.toLowerCase()];
+        
+        // Verifica se il tecnico ha un calendario configurato
+        if (tech.calendarId && tech.calendarId.trim() !== "") {
+          try {
+            const techCalendar = CalendarApp.getCalendarById(tech.calendarId);
+            if (techCalendar) {
+              // Crea titolo evento per il calendario del tecnico
+              const techEventTitle = `${eventName} - ${luogo}`;
+              
+              // Recupera il link al form precompilato
+              const idLink = `${eventId}${techName}`;
+              let formLink = "";
+              
+              // Cerca il link al form nella scheda servizi
+              const servicesSheet = ss.getSheetByName(config.sheetNames.servizi);
+              if (servicesSheet) {
+                const servicesData = servicesSheet.getDataRange().getValues();
+                for (let j = 1; j < servicesData.length; j++) {
+                  if (servicesData[j][4] && servicesData[j][4].toString().trim().toLowerCase() === idLink.toLowerCase()) {
+                    formLink = servicesData[j][5]; // Colonna F contiene il link al form
+                    break;
+                  }
+                }
+              }
+              
+              // Crea descrizione per il calendario del tecnico
+              let extraInfo = extraInfos[i] || "";
+              extraInfo = (typeof extraInfo === "string") ? extraInfo.trim() : "";
+              
+              // Assicuriamoci che la descrizione originale dell'evento sia sempre inclusa
+              let fullDescription = description || "";
+              
+              // Aggiungi info sul calendario di origine
+              fullDescription = `Calendario di origine: ${calendarName}\n\nDescrizione evento: ${fullDescription}`;
+              
+              // Se c'è un'informazione extra per questo tecnico, aggiungila come una nota separata
+              if (extraInfo) {
+                fullDescription = `${fullDescription}\n\nNote per ${tech.name}: ${extraInfo}`;
+              }
+              
+              // Aggiungi il link al form precompilato
+              if (formLink) {
+                fullDescription = `${fullDescription}\n\nCompila il form di servizio: ${formLink}`;
+              }
+              
+              // Crea o aggiorna l'evento nel calendario del tecnico
+              const startTime = new Date(startTimeISO);
+              const endTime = new Date(endTimeISO);
+              
+              // Cerca se esiste già un evento con lo stesso ID nel calendario del tecnico
+              // Utilizziamo una proprietà estesa per memorizzare l'ID dell'evento originale
+              const existingEvents = techCalendar.getEvents(
+                new Date(startTime.getTime() - 3600000), // 1 ora prima
+                new Date(endTime.getTime() + 3600000)    // 1 ora dopo
+              );
+              
+              let techEvent = null;
+              let eventFound = false;
+              
+              // Prima verifica se c'è un evento con l'ID originale nelle proprietà estese
+              for (let j = 0; j < existingEvents.length; j++) {
+                const currentEvent = existingEvents[j];
+                try {
+                  const properties = currentEvent.getAllExtendedProperties();
+                  if (properties && properties.shared && properties.shared.originalEventId === eventId) {
+                    techEvent = currentEvent;
+                    eventFound = true;
+                    break;
+                  }
+                } catch (propError) {
+                  // Ignora errori nelle proprietà estese
+                }
+              }
+              
+              // Se non è stato trovato un evento con l'ID originale, cerca eventi con titolo simile
+              if (!eventFound) {
+                for (let j = 0; j < existingEvents.length; j++) {
+                  if (existingEvents[j].getTitle().includes(eventName) || 
+                      existingEvents[j].getTitle().includes(luogo)) {
+                    techEvent = existingEvents[j];
+                    eventFound = true;
+                    break;
+                  }
+                }
+              }
+              
+              if (eventFound && techEvent) {
+                // Aggiorna l'evento esistente
+                techEvent.setTitle(techEventTitle);
+                techEvent.setDescription(fullDescription);
+                if (luogo && luogo.trim() !== "") {
+                  techEvent.setLocation(luogo);
+                }
+                techEvent.setTime(startTime, endTime);
+                
+                // Assicuriamoci che l'ID originale sia salvato nelle proprietà estese
+                try {
+                  techEvent.setExtendedProperty('originalEventId', eventId);
+                } catch (propError) {
+                  Logger.log(`Impossibile impostare la proprietà estesa: ${propError.toString()}`);
+                }
+                
+                Logger.log(`Evento aggiornato nel calendario di ${tech.name}: ${techEventTitle}`);
+              } else {
+                // Crea un nuovo evento
+                techEvent = techCalendar.createEvent(
+                  techEventTitle,
+                  startTime,
+                  endTime,
+                  {
+                    description: fullDescription,
+                    location: luogo
+                  }
+                );
+                
+                // Salva l'ID originale nelle proprietà estese
+                try {
+                  techEvent.setExtendedProperty('originalEventId', eventId);
+                } catch (propError) {
+                  Logger.log(`Impossibile impostare la proprietà estesa: ${propError.toString()}`);
+                }
+                
+                Logger.log(`Nuovo evento creato nel calendario di ${tech.name}: ${techEventTitle}`);
+              }
+            }
+          } catch (error) {
+            Logger.log(`Errore nell'aggiornamento del calendario per ${tech.name}: ${error.toString()}`);
+          }
         }
-        return { name: token, extra: "" };
-      });
-      let areAllTech = tokenObjects.length > 0 && tokenObjects.every(obj => techMapping.hasOwnProperty(obj.name.toLowerCase()));
-      if (areAllTech) {
-        tokenObjects.forEach(obj => {
-          techNames.push(obj.name);
-          techExtras.push(obj.extra);
-        });
-      } else {
-        noteFromParentheses = rawGroup;
       }
-      vehicle = match[4] || "";
-    } else {
-      name = title;
-    }
-    
-    if (!vehicle || vehicle.trim() === "") {
-      vehicle = "Mezzo Proprio";
-    }
-    
-    let techColumns = Array(5).fill("");
-    let extraColumns = Array(5).fill("");
-    if (techNames.length > 0) {
-      for (let i = 0; i < techNames.length && i < 5; i++) {
-        techColumns[i] = techNames[i];
-        extraColumns[i] = techExtras[i] || "";
-      }
-    } else if (noteFromParentheses) {
-      techColumns[0] = noteFromParentheses;
-      extraColumns[0] = noteFromParentheses;
-    }
-    
-    const techIDs = techColumns.map(tech => {
-      if (tech && tech.trim() !== "" && techMapping.hasOwnProperty(tech.toLowerCase())) {
-        return techMapping[tech.toLowerCase()].id;
-      }
-      return "";
-    });
-    
-    let description = event.getDescription() || "";
-    if (noteFromParentheses && techNames.length === 0) {
-      description = `[Note: ${noteFromParentheses}] ` + description;
-    }
-    
-    const eventInfo = [
-      eventId, idCivette, eventDate, name, luogo
-    ].concat(techColumns).concat(techIDs).concat([vehicle, event.getStartTime().toISOString(), event.getEndTime().toISOString(), description]).concat(extraColumns);
-    
-    if (!existingEventIds.includes(eventId)) {
-      eventDataNew.push(eventInfo);
-    } else {
-      const rowIndex = existingEventIds.indexOf(eventId) + 2;
-      eventsSheet.getRange(rowIndex, 1, 1, 24).setValues([eventInfo]);
-      eventsSheet.getRange(rowIndex, 1).setBackground('yellow');
     }
   });
-  
-  if (eventDataNew.length > 0) {
-    eventsSheet.getRange(eventsSheet.getLastRow() + 1, 1, eventDataNew.length, 24).setValues(eventDataNew);
-  }
-  
-  return eventsSheet.getRange(2, 1, eventsSheet.getLastRow() - 1, 24).getValues();
 }
