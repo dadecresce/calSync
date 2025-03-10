@@ -43,3 +43,11 @@ function createDailyTrigger() {
     .atHour(1)
     .create();
 }
+
+function onOpen() {
+  const ui = SpreadsheetApp.getUi();
+  ui.createMenu('Funzioni Personalizzate')
+    .addItem('Avvia sincronizzazione', 'avvio')
+    .addItem('Genera orari settimanali', 'generaOrariSettimanali')
+    .addToUi();
+}
